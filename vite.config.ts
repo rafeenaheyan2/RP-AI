@@ -8,8 +8,8 @@ export default defineConfig(({ mode }) => {
   return {
     plugins: [react()],
     define: {
-      // Ensuring the API_KEY is stringified and available globally in the browser context
-      'process.env.API_KEY': JSON.stringify(env.API_KEY || ''),
+      // Priority: 1. .env file (env.API_KEY), 2. System environment (process.env.API_KEY)
+      'process.env.API_KEY': JSON.stringify(env.API_KEY || process.env.API_KEY || ''),
     },
     server: {
       port: 3000,
