@@ -4,14 +4,9 @@ export const editImageWithGemini = async (
   base64Image: string, 
   prompt: string
 ): Promise<string> => {
-  // Try to get API key from process.env (Netlify/Vite define)
-  const apiKey = process.env.API_KEY;
-  
-  if (!apiKey) {
-    throw new Error("Gemini API Key is missing. Please set it in Netlify environment variables as API_KEY.");
-  }
-
-  const ai = new GoogleGenAI({ apiKey });
+  // Always use the direct initialization as per @google/genai guidelines.
+  // The API key must be obtained exclusively from the environment variable process.env.API_KEY.
+  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY as string });
   const modelName = 'gemini-2.5-flash-image';
   
   // Extract clean base64 data
@@ -36,32 +31,35 @@ export const editImageWithGemini = async (
       },
     });
 
-    const candidate = response.candidates?.[0];
-    if (!candidate?.content?.parts) {
-      throw new Error("The AI model returned an empty response. Please try again with a different photo.");
+    if (!response.candidates || response.candidates.length === 0) {
+      throw new Error("The AI model returned no results. Try a clearer photo.");
     }
 
-    for (const part of candidate.content.parts) {
+    const parts = response.candidates[0].content.parts;
+    
+    // Iterate through all parts to find the image part, as recommended by guidelines.
+    for (const part of parts) {
       if (part.inlineData) {
-        return `data:${part.inlineData.mimeType};base64,${part.inlineData.data}`;
+        const base64EncodeString: string = part.inlineData.data;
+        return `data:${part.inlineData.mimeType};base64,${base64EncodeString}`;
       }
     }
 
-    // If text is returned instead of image, it might be an error message from the model
-    const textPart = candidate.content.parts.find(p => p.text);
+    // Fallback if no image part found
+    const textPart = parts.find(p => p.text);
     if (textPart) {
-      throw new Error(`AI Notice: ${textPart.text}`);
+      throw new Error(textPart.text);
     }
 
-    throw new Error("No image data found in the AI response.");
+    throw new Error("No image was generated. Please try a different request.");
   } catch (error: any) {
-    console.error("Gemini API Error:", error);
-    if (error.status === 403 || error.status === 401) {
-      throw new Error("API Key is invalid or has expired.");
+    console.error("Gemini API Error details:", error);
+    
+    // Graceful error handling for API issues
+    if (error.message?.includes('API key')) {
+      throw new Error("Invalid API Key configuration. Please check the server environment.");
     }
-    if (error.status === 429) {
-      throw new Error("Too many requests. Please wait a minute.");
-    }
-    throw error;
+    
+    throw new Error(error.message || "Something went wrong with the AI processing.");
   }
 };
