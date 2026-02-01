@@ -1,16 +1,20 @@
-
 import { GoogleGenAI } from "@google/genai";
 
 export const editImageWithGemini = async (
   base64Image: string, 
   prompt: string
 ): Promise<string> => {
-  // Always initialize fresh to ensure correct API key handling
-  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY || '' });
+  // Try to get API key from process.env (Netlify/Vite define)
+  const apiKey = process.env.API_KEY;
   
-  // Use gemini-2.5-flash-image for visual editing tasks
+  if (!apiKey) {
+    throw new Error("Gemini API Key is missing. Please set it in Netlify environment variables as API_KEY.");
+  }
+
+  const ai = new GoogleGenAI({ apiKey });
   const modelName = 'gemini-2.5-flash-image';
   
+  // Extract clean base64 data
   const mimeType = base64Image.split(';')[0].split(':')[1];
   const imageData = base64Image.split(',')[1];
 
@@ -34,7 +38,7 @@ export const editImageWithGemini = async (
 
     const candidate = response.candidates?.[0];
     if (!candidate?.content?.parts) {
-      throw new Error("No output generated from AI.");
+      throw new Error("The AI model returned an empty response. Please try again with a different photo.");
     }
 
     for (const part of candidate.content.parts) {
@@ -43,12 +47,20 @@ export const editImageWithGemini = async (
       }
     }
 
+    // If text is returned instead of image, it might be an error message from the model
+    const textPart = candidate.content.parts.find(p => p.text);
+    if (textPart) {
+      throw new Error(`AI Notice: ${textPart.text}`);
+    }
+
     throw new Error("No image data found in the AI response.");
   } catch (error: any) {
     console.error("Gemini API Error:", error);
-    // Provide a more descriptive error if the API key is missing
-    if (error.message?.includes('API_KEY')) {
-      throw new Error("API Key is missing or invalid. Please check your environment variables.");
+    if (error.status === 403 || error.status === 401) {
+      throw new Error("API Key is invalid or has expired.");
+    }
+    if (error.status === 429) {
+      throw new Error("Too many requests. Please wait a minute.");
     }
     throw error;
   }

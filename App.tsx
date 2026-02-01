@@ -32,19 +32,27 @@ const App: React.FC = () => {
         const ctx = canvas.getContext('2d');
         if (!ctx) { resolve(base64); return; }
 
-        const TARGET_WIDTH = 1080;
-        const scaleFactor = TARGET_WIDTH / img.width;
-        canvas.width = TARGET_WIDTH;
-        canvas.height = img.height * scaleFactor;
+        // Optimize resolution for Gemini to handle faster
+        const MAX_DIM = 1024;
+        let width = img.width;
+        let height = img.height;
 
-        ctx.imageSmoothingEnabled = true;
-        ctx.imageSmoothingQuality = 'high';
-        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+        if (width > height) {
+          if (width > MAX_DIM) {
+            height *= MAX_DIM / width;
+            width = MAX_DIM;
+          }
+        } else {
+          if (height > MAX_DIM) {
+            width *= MAX_DIM / height;
+            height = MAX_DIM;
+          }
+        }
 
-        ctx.filter = 'contrast(1.1) saturate(1.1) brightness(1.05)';
-        ctx.drawImage(canvas, 0, 0);
-
-        resolve(canvas.toDataURL('image/jpeg', 0.95));
+        canvas.width = width;
+        canvas.height = height;
+        ctx.drawImage(img, 0, 0, width, height);
+        resolve(canvas.toDataURL('image/jpeg', 0.8));
       };
       img.src = base64;
     });
@@ -53,21 +61,30 @@ const App: React.FC = () => {
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
+      if (file.size > 10 * 1024 * 1024) {
+        setState(prev => ({ ...prev, error: "File size too large. Please upload under 10MB." }));
+        return;
+      }
       const reader = new FileReader();
       reader.onload = async (event) => {
         const rawResult = event.target?.result as string;
         setIsOptimizing(true);
-        const optimizedResult = await optimizeImage(rawResult);
-        setState({
-          original: optimizedResult,
-          edited: optimizedResult,
-          isProcessing: false,
-          error: null
-        });
-        setIsOptimizing(false);
-        setShowDresses(false);
-        setShowFilters(false);
-        setShowProMenu(false);
+        try {
+          const optimizedResult = await optimizeImage(rawResult);
+          setState({
+            original: optimizedResult,
+            edited: optimizedResult,
+            isProcessing: false,
+            error: null
+          });
+        } catch (err) {
+          setState(prev => ({ ...prev, error: "Image processing failed." }));
+        } finally {
+          setIsOptimizing(false);
+          setShowDresses(false);
+          setShowFilters(false);
+          setShowProMenu(false);
+        }
       };
       reader.readAsDataURL(file);
     }
@@ -81,82 +98,38 @@ const App: React.FC = () => {
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
-  const handleBgRemove = async () => {
+  const processEdit = async (prompt: string) => {
     if (!state.original) return;
     setState(prev => ({ ...prev, isProcessing: true, error: null }));
     try {
-      const result = await editImageWithGemini(
-        state.edited || state.original,
-        "Remove the background perfectly. Make the background pure solid studio white. Keep the person high-definition."
-      );
-      setState(prev => ({ ...prev, edited: result, isProcessing: false }));
+      const result = await editImageWithGemini(state.edited || state.original, prompt);
+      setState(prev => ({ ...prev, edited: result, isProcessing: false, error: null }));
     } catch (err: any) {
-      setState(prev => ({ ...prev, isProcessing: false, error: "Background removal failed." }));
+      console.error(err);
+      setState(prev => ({ 
+        ...prev, 
+        isProcessing: false, 
+        error: err.message || "AI editing failed. Please try again." 
+      }));
     }
   };
 
-  const handleApplyClothing = async (optionOrPrompt: ClothingOption | string) => {
-    if (!state.original) return;
-    setState(prev => ({ ...prev, isProcessing: true, error: null }));
+  const handleBgRemove = () => processEdit("Remove the background and make it solid professional studio white. Keep the subject high definition.");
+  
+  const handleApplyClothing = (optionOrPrompt: ClothingOption | string) => {
     const promptText = typeof optionOrPrompt === 'string' ? optionOrPrompt : optionOrPrompt.prompt;
-    try {
-      const result = await editImageWithGemini(
-        state.edited || state.original,
-        `IDENTITY PROTECTION: DO NOT CHANGE THE FACE. Change clothes to ${promptText}. Fit the new clothes perfectly to the body shape while keeping the head and face exactly as it is.`
-      );
-      setState(prev => ({ ...prev, edited: result, isProcessing: false }));
-    } catch (err: any) {
-      setState(prev => ({ ...prev, isProcessing: false, error: "Style application failed." }));
-    }
+    processEdit(`DO NOT CHANGE THE PERSON'S FACE OR IDENTITY. Change the current clothing to ${promptText}. The new clothing should fit perfectly.`);
   };
 
-  const handleApplyFilter = async (filterPrompt: string) => {
-    if (!state.edited && !state.original) return;
-    setState(prev => ({ ...prev, isProcessing: true, error: null }));
-    try {
-      const result = await editImageWithGemini(
-        state.edited || state.original,
-        `${filterPrompt}. Do not alter the person's identity.`
-      );
-      setState(prev => ({ ...prev, edited: result, isProcessing: false }));
-    } catch (err: any) {
-      setState(prev => ({ ...prev, isProcessing: false, error: "Filter failed." }));
-    }
-  };
-
-  const handlePhotoEnhance = async () => {
-    if (!state.original) return;
-    setState(prev => ({ ...prev, isProcessing: true, error: null }));
-    try {
-      const result = await editImageWithGemini(
-        state.edited || state.original,
-        "Deep Neural Enhancement: Increase image resolution to 4K quality, sharpen all details, improve lighting and colors."
-      );
-      setState(prev => ({ ...prev, edited: result, isProcessing: false }));
-    } catch (err: any) {
-      setState(prev => ({ ...prev, isProcessing: false, error: "AI Enhancement failed." }));
-    }
-  };
-
-  const handleAIPassport = async () => {
-    if (!state.original) return;
-    setState(prev => ({ ...prev, isProcessing: true, error: null }));
-    try {
-      const result = await editImageWithGemini(
-        state.edited || state.original,
-        "IDENTITY PRESERVED PASSPORT PHOTO: Change background to professional light blue. Change attire to a formal navy suit. Align head straight."
-      );
-      setState(prev => ({ ...prev, edited: result, isProcessing: false }));
-    } catch (err: any) {
-      setState(prev => ({ ...prev, isProcessing: false, error: "Passport photo failed." }));
-    }
-  };
+  const handleApplyFilter = (filterPrompt: string) => processEdit(filterPrompt);
+  const handlePhotoEnhance = () => processEdit("Professional photo enhancement: improve lighting, sharpen details, and upscale to 4K quality.");
+  const handleAIPassport = () => processEdit("Professional Passport Photo: Change background to light blue, change clothes to a formal suit, and center the face.");
 
   const handleExport = () => {
     if (!state.edited) return;
     const link = document.createElement('a');
     link.href = state.edited;
-    link.download = 'ai-stylist-export.png';
+    link.download = `rafee-ai-${Date.now()}.png`;
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -184,22 +157,32 @@ const App: React.FC = () => {
         </div>
       </header>
 
+      {state.error && (
+        <div className="w-full mb-6 p-4 bg-red-500/10 border border-red-500/50 rounded-2xl flex items-center gap-4 text-red-500 animate-pulse">
+          <i className="fa-solid fa-triangle-exclamation text-xl"></i>
+          <p className="text-xs font-bold uppercase tracking-widest">{state.error}</p>
+          <button onClick={() => setState(p => ({...p, error: null}))} className="ml-auto text-white/50 hover:text-white">
+            <i className="fa-solid fa-xmark"></i>
+          </button>
+        </div>
+      )}
+
       <div className="w-full space-y-8">
         {showProMenu && (
           <div className="w-full bg-zinc-900/40 backdrop-blur-3xl p-8 rounded-[40px] border border-blue-500/20 shadow-3xl grid grid-cols-1 md:grid-cols-2 gap-6">
             <div className="grid grid-cols-2 gap-4">
-              <button onClick={handlePhotoEnhance} className="flex flex-col items-center p-6 rounded-3xl bg-zinc-950/50 hover:bg-[#007BFF] transition-all border border-white/5" disabled={state.isProcessing}>
+              <button onClick={handlePhotoEnhance} className="flex flex-col items-center p-6 rounded-3xl bg-zinc-950/50 hover:bg-[#007BFF] transition-all border border-white/5 disabled:opacity-50" disabled={state.isProcessing}>
                 <i className="fa-solid fa-bolt-lightning text-3xl mb-3"></i>
                 <span className="text-[10px] font-black uppercase tracking-widest">Enhance HD</span>
               </button>
-              <button onClick={handleAIPassport} className="flex flex-col items-center p-6 rounded-3xl bg-zinc-950/50 hover:bg-indigo-600 transition-all border border-white/5" disabled={state.isProcessing}>
+              <button onClick={handleAIPassport} className="flex flex-col items-center p-6 rounded-3xl bg-zinc-950/50 hover:bg-indigo-600 transition-all border border-white/5 disabled:opacity-50" disabled={state.isProcessing}>
                 <i className="fa-solid fa-id-card text-3xl mb-3"></i>
                 <span className="text-[10px] font-black uppercase tracking-widest">Passport AI</span>
               </button>
             </div>
             <div className="bg-zinc-950/40 p-5 rounded-3xl border border-white/5 flex flex-col gap-3">
-              <textarea placeholder="Custom instruction..." className="flex-1 bg-transparent border border-white/10 rounded-2xl p-4 text-xs text-white focus:border-blue-500 outline-none resize-none" value={proEditPrompt} onChange={(e) => setProEditPrompt(e.target.value)} />
-              <button onClick={() => handleApplyClothing(proEditPrompt)} className="bg-blue-600 py-3 rounded-xl text-[10px] uppercase font-black" disabled={state.isProcessing || !proEditPrompt}>Execute Command</button>
+              <textarea placeholder="Custom instruction (e.g. 'Add a red hat')..." className="flex-1 bg-transparent border border-white/10 rounded-2xl p-4 text-xs text-white focus:border-blue-500 outline-none resize-none" value={proEditPrompt} onChange={(e) => setProEditPrompt(e.target.value)} />
+              <button onClick={() => handleApplyClothing(proEditPrompt)} className="bg-blue-600 py-3 rounded-xl text-[10px] uppercase font-black disabled:opacity-50" disabled={state.isProcessing || !proEditPrompt}>Execute Command</button>
             </div>
           </div>
         )}
@@ -256,14 +239,19 @@ const App: React.FC = () => {
             )}
 
             <div className="pt-12 border-t border-white/5 w-full">
-               {state.edited && (
-                  <GlossyButton onClick={handleExport} className="mb-8 w-full md:w-auto">Export Photo</GlossyButton>
-               )}
-              <div className="preview-box rounded-[40px] p-4 min-h-[500px] flex items-center justify-center bg-black border-2 border-[#007BFF]/40">
+              <div className="flex justify-between items-center mb-6">
+                <h3 className="text-[10px] font-black uppercase tracking-[0.3em] text-gray-500">Preview Result</h3>
+                {state.edited && (
+                  <button onClick={handleExport} className="text-[#007BFF] font-black text-[10px] uppercase tracking-widest hover:underline flex items-center gap-2">
+                    <i className="fa-solid fa-download"></i> Download Full Res
+                  </button>
+                )}
+              </div>
+              <div className="preview-box rounded-[40px] p-4 min-h-[500px] flex items-center justify-center bg-black border-2 border-[#007BFF]/40 relative">
                 {(state.isProcessing || isOptimizing) ? (
                   <div className="text-center">
                     <div className="w-12 h-12 border-4 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
-                    <p className="text-[10px] font-black uppercase tracking-widest text-blue-500">Processing Neural Data...</p>
+                    <p className="text-[10px] font-black uppercase tracking-widest text-blue-500">Neural Synthesis Active...</p>
                   </div>
                 ) : (
                   <img src={state.edited || ''} className="max-w-full max-h-[75vh] rounded-[24px] shadow-2xl" />
