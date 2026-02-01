@@ -24,58 +24,26 @@
             backdrop-filter: blur(10px);
             transition: all 0.3s ease;
         }
-        /* Custom scrollbar */
         ::-webkit-scrollbar { width: 8px; }
         ::-webkit-scrollbar-track { background: #050505; }
         ::-webkit-scrollbar-thumb { background: #1a1a1a; border-radius: 10px; }
         ::-webkit-scrollbar-thumb:hover { background: #007BFF; }
-
-        /* Error Overlay Style */
-        #error-display {
-            position: fixed;
-            top: 10px;
-            left: 10px;
-            right: 10px;
-            background: rgba(255, 0, 0, 0.1);
-            border: 1px solid red;
-            color: #ff4444;
-            padding: 15px;
-            border-radius: 8px;
-            font-family: monospace;
-            z-index: 9999;
-            display: none;
-            font-size: 12px;
-        }
     </style>
-    <script>
-      // Shim process.env
-      window.process = window.process || { env: { API_KEY: "" } };
-      
-      // Global error handler for debugging blank screens
-      window.onerror = function(msg, url, lineNo, columnNo, error) {
-        const display = document.getElementById('error-display');
-        if (display) {
-            display.style.display = 'block';
-            display.innerHTML += `<div>Error: ${msg} <br> At: ${url}:${lineNo}</div>`;
-        }
-        return false;
-      };
-    </script>
 <script type="importmap">
 {
   "imports": {
-    "react/": "https://esm.sh/react@^19.2.3/",
-    "react": "https://esm.sh/react@^19.2.3",
-    "@google/genai": "https://esm.sh/@google/genai@^1.38.0",
-    "react-dom/": "https://esm.sh/react-dom@^19.2.3/"
+    "@google/genai": "https://esm.sh/@google/genai@^1.39.0",
+    "react/": "https://esm.sh/react@^19.2.4/",
+    "react": "https://esm.sh/react@^19.2.4",
+    "@vitejs/plugin-react": "https://esm.sh/@vitejs/plugin-react@^5.1.2",
+    "vite": "https://esm.sh/vite@^7.3.1",
+    "react-dom/": "https://esm.sh/react-dom@^19.2.4/"
   }
 }
 </script>
 </head>
 <body>
-    <div id="error-display"></div>
     <div id="root"></div>
-    <!-- Using relative path for better compatibility -->
-    <script type="module" src="./index.tsx"></script>
+    <script type="module" src="/index.tsx"></script>
 </body>
 </html>
